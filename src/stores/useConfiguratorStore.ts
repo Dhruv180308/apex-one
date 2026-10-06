@@ -1,4 +1,8 @@
 import { create } from 'zustand';
+import {
+  VEHICLE_REGISTRY,
+  type VehicleManifest,
+} from '@/config/vehicles';
 
 export interface PaintColor {
   id: string;
@@ -6,14 +10,6 @@ export interface PaintColor {
   hex: string;
   finish: 'metallic' | 'gloss' | 'matte';
 }
-
-export const PAINT_COLORS: PaintColor[] = [
-  { id: 'rosso', name: 'Rosso Corsa', hex: '#D92B2B', finish: 'metallic' },
-  { id: 'solaris', name: 'Solaris Gold', hex: '#E6A100', finish: 'metallic' },
-  { id: 'verde', name: 'Verde Olive', hex: '#3B5336', finish: 'matte' },
-  { id: 'sahara', name: 'Sahara Sand', hex: '#C2B280', finish: 'gloss' },
-  { id: 'nero', name: 'Nero Carbon', hex: '#1A1918', finish: 'metallic' },
-];
 
 export type WheelStyleId = 'forged' | 'carbon' | 'matte';
 
@@ -28,39 +24,6 @@ export interface WheelStyle {
   envMapIntensity?: number;
 }
 
-export const WHEEL_STYLES: WheelStyle[] = [
-  {
-    id: 'forged',
-    name: 'Forged Titanium',
-    subtitle: 'CNC • Brushed',
-    color: '#8A8680',
-    metalness: 0.95,
-    roughness: 0.32,
-    clearcoat: 0.4,
-    envMapIntensity: 1.6,
-  },
-  {
-    id: 'carbon',
-    name: 'Exposed Carbon',
-    subtitle: 'Twill • 2×2',
-    color: '#1A1918',
-    metalness: 0.35,
-    roughness: 0.48,
-    clearcoat: 0.85,
-    envMapIntensity: 1.2,
-  },
-  {
-    id: 'matte',
-    name: 'Matte Obsidian',
-    subtitle: 'Stealth • Soft',
-    color: '#0D0C0B',
-    metalness: 0.15,
-    roughness: 0.88,
-    clearcoat: 0.05,
-    envMapIntensity: 0.4,
-  },
-];
-
 export type HotspotId =
   | 'splitter'
   | 'headlight'
@@ -70,6 +33,23 @@ export type HotspotId =
   | null;
 
 export interface ConfiguratorState {
+  activeVehicleId: string;
+  activeManifest: VehicleManifest;
+  setActiveVehicle: (id: string) => void; // Immediate swap
+
+  // Cinematic Transition State
+  isVehicleTransitioning: boolean;
+  transitionProgress: number;
+  pendingVehicleId: string | null;
+  requestVehicleChange: (id: string) => void;
+  setTransitionProgress: (v: number) => void;
+  executeMidTransitionSwap: () => void;
+  endTransition: () => void;
+
+  vaultGalleryOpen: boolean;
+  setVaultGalleryOpen: (open: boolean) => void;
+  toggleVaultGallery: () => void;
+
   scrollProgress: number;
   setScrollProgress: (progress: number) => void;
 
@@ -99,7 +79,6 @@ export interface ConfiguratorState {
   audioMuted: boolean;
   toggleAudioMuted: () => void;
 
-  // Reserve flow
   reserveOpen: boolean;
   setReserveOpen: (open: boolean) => void;
   reserveStep: 1 | 2 | 3;
@@ -114,44 +93,110 @@ export interface ConfiguratorState {
   setReserveSlot: (v: string) => void;
 }
 
-export const useConfiguratorStore = create<ConfiguratorState>((set) => ({
+const initialVehicle = VEHICLE_REGISTRY['one1'];
+
+export const useConfiguratorStore = create<ConfiguratorState>((set, get) => ({
+  activeVehicleId: 'one1',
+  activeManifest: initialVehicle,
+  
+  // Instant swap (used for initial load)
+  setActiveVehicle: (id: string) => {
+    const manifest = VEHICLE_REGISTRY[id] || initialVehicle;
+    set({
+      activeVehicleId: id,
+      activeManifest: manifest,
+      activeColor: manifest.paints[0].id,
+      paintColor: manifest.paints[0].hex,
+      activeWheel: manifest.wheels[0].id as WheelStyleId,
+      activeHotspot: null,
+      engineOn: false,
+      throttle: 0,
+    });
+  },
+
+  // ── Cinematic Transition Methods ──
+  isVehicleTransitioning: false,
+  transitionProgress: 0,
+  pendingVehicleId: null,
+
+  requestVehicleChange: (id: string) => {
+    const state = get();
+    if (id === state.activeVehicleId || state.isVehicleTransitioning) return;
+    if (!VEHICLE_REGISTRY[id]) return;
+
+    set({
+      isVehicleTransitioning: true,
+      transitionProgress: 0,
+      pendingVehicleId: id,
+      engineOn: false, // Kill engine during materialization
+      throttle: 0,
+      activeHotspot: null, // Close popovers
+    });
+  },
+
+  setTransitionProgress: (v: number) => set({ transitionProgress: Math.max(0, Math.min(1, v)) }),
+
+  // Called halfway through the scan animation to swap the 3D model
+  executeMidTransitionSwap: () => {
+    const state = get();
+    if (!state.pendingVehicleId) return;
+    
+    const manifest = VEHICLE_REGISTRY[state.pendingVehicleId] || initialVehicle;
+    set({
+      activeVehicleId: state.pendingVehicleId,
+      activeManifest: manifest,
+      activeColor: manifest.paints[0].id,
+      paintColor: manifest.paints[0].hex,
+      activeWheel: manifest.wheels[0].id as WheelStyleId,
+    });
+  },
+
+  // Called when scan is finished
+  endTransition: () => {
+    set({
+      isVehicleTransitioning: false,
+      transitionProgress: 0,
+      pendingVehicleId: null,
+    });
+  },
+  // ─────────────────────────────────
+
+  vaultGalleryOpen: false,
+  setVaultGalleryOpen: (open: boolean) => set({ vaultGalleryOpen: open }),
+  toggleVaultGallery: () => set((s) => ({ vaultGalleryOpen: !s.vaultGalleryOpen })),
+
   scrollProgress: 0,
   setScrollProgress: (progress: number) => set({ scrollProgress: progress }),
 
-  activeColor: 'rosso',
-  paintColor: '#D92B2B',
-  setPaintColor: (color: PaintColor) =>
-    set({ activeColor: color.id, paintColor: color.hex }),
+  activeColor: initialVehicle.paints[0].id,
+  paintColor: initialVehicle.paints[0].hex,
+  setPaintColor: (color: PaintColor) => set({ activeColor: color.id, paintColor: color.hex }),
 
-  activeWheel: 'forged',
+  activeWheel: initialVehicle.wheels[0].id as WheelStyleId,
   setActiveWheel: (id: WheelStyleId) => set({ activeWheel: id }),
 
   headlightsOn: false,
-  toggleHeadlights: () =>
-    set((s: ConfiguratorState) => ({ headlightsOn: !s.headlightsOn })),
+  toggleHeadlights: () => set((s) => ({ headlightsOn: !s.headlightsOn })),
 
   doorsOpen: false,
-  toggleDoors: () =>
-    set((s: ConfiguratorState) => ({ doorsOpen: !s.doorsOpen })),
+  toggleDoors: () => set((s) => ({ doorsOpen: !s.doorsOpen })),
 
   activeHotspot: null,
   setActiveHotspot: (id: HotspotId) => set({ activeHotspot: id }),
 
   engineOn: false,
   setEngineOn: (on: boolean) => set({ engineOn: on }),
-  toggleEngine: () =>
-    set((s: ConfiguratorState) => ({ engineOn: !s.engineOn })),
+  toggleEngine: () => set((s) => ({ engineOn: !s.engineOn })),
 
   throttle: 0,
   setThrottle: (v: number) => set({ throttle: Math.max(0, Math.min(1, v)) }),
 
   audioMuted: false,
-  toggleAudioMuted: () =>
-    set((s: ConfiguratorState) => ({ audioMuted: !s.audioMuted })),
+  toggleAudioMuted: () => set((s) => ({ audioMuted: !s.audioMuted })),
 
   reserveOpen: false,
   setReserveOpen: (open: boolean) =>
-    set((s: ConfiguratorState) => ({
+    set((s) => ({
       reserveOpen: open,
       reserveStep: open ? 1 : s.reserveStep,
     })),

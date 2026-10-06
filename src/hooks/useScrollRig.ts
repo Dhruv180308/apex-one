@@ -3,55 +3,75 @@
 import { useEffect, useRef } from 'react';
 import { useConfiguratorStore } from '@/stores/useConfiguratorStore';
 
-/**
- * Maps wheel + touch into a damped 0–1 scrollProgress written to Zustand.
- * Total virtual scroll distance ≈ 4.5 viewports for deliberate pacing.
- */
 export function useScrollRig() {
   const target = useRef(0);
   const current = useRef(0);
+  const velocity = useRef(0);
   const raf = useRef<number>(0);
+
   const touchY = useRef(0);
+  const touchTime = useRef(0);
 
   useEffect(() => {
-    
     const WHEEL_SENSITIVITY = 0.00115;
-    const TOUCH_SENSITIVITY = 0.0014;
-    const LERP = 0.075;
+    const TOUCH_SENSITIVITY = 0.0016;
+    const LERP = 0.08;
 
     const write = (v: number) => {
       useConfiguratorStore.getState().setScrollProgress(v);
     };
 
     const tick = () => {
+      // Apply momentum velocity decay
+      if (Math.abs(velocity.current) > 0.00005) {
+        target.current = Math.max(0, Math.min(1, target.current + velocity.current));
+        velocity.current *= 0.92; // Friction decay
+      } else {
+        velocity.current = 0;
+      }
+
       current.current += (target.current - current.current) * LERP;
-      // Snap when close
-      if (Math.abs(target.current - current.current) < 0.00015) {
+
+      if (Math.abs(target.current - current.current) < 0.0001) {
         current.current = target.current;
       }
+
       write(current.current);
       raf.current = requestAnimationFrame(tick);
     };
+
     raf.current = requestAnimationFrame(tick);
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
+      velocity.current = 0; // Clear touch velocity on wheel
       const delta = e.deltaY * WHEEL_SENSITIVITY;
       target.current = Math.max(0, Math.min(1, target.current + delta));
     };
 
     const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      velocity.current = 0;
       touchY.current = e.touches[0].clientY;
+      touchTime.current = performance.now();
     };
 
     const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
       const y = e.touches[0].clientY;
-      const delta = (touchY.current - y) * TOUCH_SENSITIVITY;
+      const deltaY = touchY.current - y;
+      const dt = Math.max(1, performance.now() - touchTime.current);
+
       touchY.current = y;
-      target.current = Math.max(0, Math.min(1, target.current + delta));
+      touchTime.current = performance.now();
+
+      const scrollDelta = deltaY * TOUCH_SENSITIVITY;
+      target.current = Math.max(0, Math.min(1, target.current + scrollDelta));
+
+      // Calculate flick velocity for momentum
+      velocity.current = (scrollDelta / dt) * 12;
     };
 
-    // Also allow keyboard
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ') {
         e.preventDefault();

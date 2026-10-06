@@ -9,7 +9,7 @@ import {
   useConfiguratorStore,
   type ConfiguratorState,
 } from '@/stores/useConfiguratorStore';
-import { HOTSPOTS, type HotspotDef } from '@/config/hotspots';
+import { type HotspotDef } from '@/config/vehicles';
 
 function HotspotMarker({ data }: { data: HotspotDef }) {
   const ringRef = useRef<THREE.Mesh>(null);
@@ -24,9 +24,7 @@ function HotspotMarker({ data }: { data: HotspotDef }) {
   const headlightsOn = useConfiguratorStore(
     (s: ConfiguratorState) => s.headlightsOn
   );
-  const engineOn = useConfiguratorStore(
-    (s: ConfiguratorState) => s.engineOn
-  );
+  const engineOn = useConfiguratorStore((s: ConfiguratorState) => s.engineOn);
   const setActiveHotspot = useConfiguratorStore(
     (s: ConfiguratorState) => s.setActiveHotspot
   );
@@ -49,33 +47,31 @@ function HotspotMarker({ data }: { data: HotspotDef }) {
 
   useFrame(({ clock }) => {
     const t = clock.getElapsedTime();
-    const breath = 1 + Math.sin(t * 2.2) * 0.08;
+    const breath = 1 + Math.sin(t * 2.5) * 0.15;
 
     if (ringRef.current) {
       ringRef.current.scale.setScalar(breath);
       const mat = ringRef.current.material as THREE.MeshBasicMaterial;
-      mat.opacity = isAnotherOpen
-        ? 0.05
-        : isOpen
-          ? 0.8
-          : inEmphasis
-            ? 0.5
-            : 0.25;
+      if (mat) {
+        mat.opacity = isAnotherOpen ? 0.1 : isOpen ? 1.0 : 0.85;
+      }
     }
 
     if (coreRef.current) {
       const mat = coreRef.current.material as THREE.MeshBasicMaterial;
-      if (isAnotherOpen) {
-        mat.opacity = 0.1;
-      } else if (isHeadlight && headlightsOn) {
-        mat.color.set('#E6A100');
-        mat.opacity = 1;
-      } else if (isOpen) {
-        mat.color.set('#D92B2B');
-        mat.opacity = 1;
-      } else {
-        mat.color.set('#1A1918');
-        mat.opacity = 0.8;
+      if (mat) {
+        if (isAnotherOpen) {
+          mat.opacity = 0.15;
+        } else if (isHeadlight && headlightsOn) {
+          mat.color.set('#E6A100');
+          mat.opacity = 1;
+        } else if (isOpen) {
+          mat.color.set('#D92B2B');
+          mat.opacity = 1;
+        } else {
+          mat.color.set('#E6A100');
+          mat.opacity = 1;
+        }
       }
     }
   });
@@ -98,7 +94,7 @@ function HotspotMarker({ data }: { data: HotspotDef }) {
 
   return (
     <group position={data.position}>
-      {/* Invisible 3D hit target */}
+      {/* 3D Hit Area */}
       <mesh
         onClick={handleMeshClick}
         onPointerOver={() => {
@@ -108,308 +104,169 @@ function HotspotMarker({ data }: { data: HotspotDef }) {
           document.body.style.cursor = 'default';
         }}
       >
-        <sphereGeometry args={[0.12, 16, 16]} />
+        <sphereGeometry args={[0.22, 16, 16]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
-      {/* Pulse ring */}
+      {/* Outer Glowing Ring */}
       <mesh ref={ringRef} rotation={[Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[0.035, 0.042, 32]} />
+        <ringGeometry args={[0.05, 0.075, 32]} />
         <meshBasicMaterial
-          color={isOpen ? '#D92B2B' : '#1A1918'}
+          color={isOpen ? '#D92B2B' : '#E6A100'}
           transparent
-          opacity={0.3}
+          opacity={0.85}
           side={THREE.DoubleSide}
           depthWrite={false}
         />
       </mesh>
 
-      {/* Core dot */}
+      {/* Core Glowing Dot */}
       <mesh ref={coreRef}>
-        <sphereGeometry args={[0.015, 16, 16]} />
+        <sphereGeometry args={[0.032, 16, 16]} />
         <meshBasicMaterial
-          color="#1A1918"
+          color={isOpen ? '#D92B2B' : '#E6A100'}
           transparent
-          opacity={0.8}
+          opacity={1}
           depthWrite={false}
         />
       </mesh>
 
-      {/* Fixed-pixel HTML overlay */}
+      {/* HTML Overlay Tag */}
       <Html
         center
-        position={[0, 0, 0]}
+        distanceFactor={10}
+        position={[0, 0.2, 0]}
         style={{
-          pointerEvents: isOpen ? 'auto' : 'none',
+          pointerEvents: 'auto',
           userSelect: 'none',
         }}
-        zIndexRange={isOpen ? [100, 0] : [10, 0]}
+        zIndexRange={isOpen ? [1000, 500] : [500, 100]}
       >
-        <div className="relative flex flex-col items-center">
-          {/* ── Liquid glass tag pill ── */}
-          {!isOpen && (
-            <motion.button
-              type="button"
-              onClick={handleDomClick}
-              initial={false}
-              animate={{
-                opacity: isAnotherOpen ? 0.2 : 1,
-                scale: inEmphasis ? 1.06 : 1,
-              }}
-              whileHover={{ scale: 1.1 }}
-              transition={{ duration: 0.22 }}
-              className="pointer-events-auto group relative flex items-center gap-1.5 px-2.5 py-[5px] rounded-full cursor-pointer"
-              style={{
-                background:
-                  'linear-gradient(165deg, rgba(28,27,25,0.75) 0%, rgba(14,13,12,0.88) 100%)',
-                backdropFilter: 'blur(20px) saturate(1.3)',
-                WebkitBackdropFilter: 'blur(20px) saturate(1.3)',
-                border: '1px solid rgba(255,255,255,0.14)',
-                boxShadow:
-                  '0 8px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.12)',
-              }}
-            >
-              <span
-                className="pointer-events-none absolute -inset-[1px] rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                style={{
-                  background:
-                    'linear-gradient(135deg, rgba(217,43,43,0.5), rgba(230,161,0,0.3), rgba(255,255,255,0.15))',
-                  zIndex: -1,
-                }}
-              />
-              <span
-                className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                  isHeadlight && headlightsOn
-                    ? 'bg-[#E6A100] shadow-[0_0_8px_#E6A100]'
-                    : inEmphasis
-                      ? 'bg-[#D92B2B] shadow-[0_0_6px_rgba(217,43,43,0.7)]'
-                      : 'bg-white/35'
-                }`}
-              />
-              <span className="font-mono text-[8.5px] tracking-[0.2em] font-medium text-[#EAE6DF] uppercase">
-                {data.label}
-              </span>
-            </motion.button>
+        <div className="relative flex flex-col items-center pointer-events-auto">
+          {/* Vertical Leader Line */}
+          {!isOpen && !isAnotherOpen && (
+            <div className="w-[2px] h-6 bg-gradient-to-b from-transparent via-[#E6A100] to-[#E6A100] shadow-[0_0_10px_#E6A100]" />
           )}
 
-          {/* ── Liquid Glass Atelier Card ── */}
+          {/* Floating Tag Pill */}
+          {!isOpen && (
+            <button
+              type="button"
+              onClick={handleDomClick}
+              className={`
+                group relative flex items-center gap-2 px-3.5 py-1.5 rounded-full cursor-pointer
+                bg-[#121110]/95 backdrop-blur-2xl border border-[#E6A100]/80 shadow-[0_10px_30px_rgba(0,0,0,0.8)]
+                hover:border-[#D92B2B] hover:scale-110 transition-all duration-200
+                ${isAnotherOpen ? 'opacity-20' : 'opacity-100'}
+              `}
+            >
+              <span
+                className={`w-2 h-2 rounded-full shrink-0 ${
+                  isHeadlight && headlightsOn
+                    ? 'bg-[#E6A100] shadow-[0_0_10px_#E6A100]'
+                    : 'bg-[#D92B2B] shadow-[0_0_8px_#D92B2B]'
+                }`}
+              />
+              <span className="font-mono text-[10px] tracking-[0.22em] font-bold text-white uppercase whitespace-nowrap">
+                {data.label}
+              </span>
+            </button>
+          )}
+
+          {/* Detail Popover Card */}
           <AnimatePresence>
             {isOpen && (
               <motion.div
                 initial={{ opacity: 0, y: 14, scale: 0.94, filter: 'blur(8px)' }}
                 animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
                 exit={{ opacity: 0, y: 8, scale: 0.97, filter: 'blur(4px)' }}
-                transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
+                transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
                 onClick={(e) => e.stopPropagation()}
-                className="relative w-[280px] pointer-events-auto"
-                style={{
-                  filter:
-                    'drop-shadow(0 24px 48px rgba(0,0,0,0.45)) drop-shadow(0 0 40px rgba(217,43,43,0.08))',
-                }}
+                className="relative w-[280px] rounded-2xl overflow-hidden bg-[#121110]/95 backdrop-blur-2xl border border-[#D92B2B]/60 shadow-[0_25px_60px_rgba(0,0,0,0.9)] p-4 flex flex-col gap-3 text-white pointer-events-auto"
               >
-                {/* Chromatic rim */}
-                <div
-                  className="absolute -inset-[1px] rounded-[18px] opacity-90"
-                  style={{
-                    background:
-                      'linear-gradient(135deg, rgba(217,43,43,0.55) 0%, rgba(230,161,0,0.35) 28%, rgba(255,255,255,0.18) 50%, rgba(230,161,0,0.2) 72%, rgba(217,43,43,0.4) 100%)',
-                  }}
-                />
-
-                {/* Glass body */}
-                <div
-                  className="relative overflow-hidden rounded-[17px]"
-                  style={{
-                    background:
-                      'linear-gradient(165deg, rgba(28,27,25,0.82) 0%, rgba(14,13,12,0.92) 48%, rgba(18,17,16,0.88) 100%)',
-                    backdropFilter: 'blur(40px) saturate(1.4)',
-                    WebkitBackdropFilter: 'blur(40px) saturate(1.4)',
-                    boxShadow:
-                      'inset 0 1px 0 rgba(255,255,255,0.14), inset 0 -1px 0 rgba(0,0,0,0.35), inset 1px 0 0 rgba(255,255,255,0.04)',
-                  }}
-                >
-                  {/* Specular liquid highlight */}
-                  <div
-                    className="pointer-events-none absolute -top-16 left-1/2 -translate-x-1/2 w-[140%] h-28 opacity-[0.18]"
-                    style={{
-                      background:
-                        'radial-gradient(ellipse at center, rgba(255,255,255,0.85) 0%, transparent 70%)',
-                    }}
-                  />
-
-                  {/* Fine noise film */}
-                  <div
-                    className="pointer-events-none absolute inset-0 opacity-[0.035] mix-blend-overlay"
-                    style={{
-                      backgroundImage:
-                        "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")",
-                    }}
-                  />
-
-                  {/* Top hairline accent */}
-                  <div
-                    className="h-[1.5px] w-full"
-                    style={{
-                      background:
-                        'linear-gradient(90deg, transparent 0%, #D92B2B 18%, #E6A100 50%, rgba(255,255,255,0.35) 78%, transparent 100%)',
-                    }}
-                  />
-
-                  <div className="relative p-4 flex flex-col gap-3">
-                    {/* Header */}
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <span
-                            className="w-1 h-1 rounded-full shrink-0"
-                            style={{
-                              background: '#D92B2B',
-                              boxShadow: '0 0 8px rgba(217,43,43,0.8)',
-                            }}
-                          />
-                          <span className="font-mono text-[8px] tracking-[0.32em] text-[#D92B2B] uppercase">
-                            {data.label}
-                          </span>
-                        </div>
-                        <h3 className="text-[14px] font-semibold tracking-[-0.015em] text-[#F7F4EE] leading-snug">
-                          {data.title}
-                        </h3>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => setActiveHotspot(null)}
-                        aria-label="Close"
-                        className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all duration-300 cursor-pointer group"
-                        style={{
-                          background: 'rgba(255,255,255,0.06)',
-                          border: '1px solid rgba(255,255,255,0.12)',
-                          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12)',
-                        }}
-                      >
-                        <span className="text-[11px] text-[#EAE6DF]/55 group-hover:text-white leading-none transition-colors">
-                          ✕
-                        </span>
-                      </button>
-                    </div>
-
-                    {/* Body */}
-                    <p className="text-[11.5px] leading-[1.6] text-[#A8A49C]">
-                      {data.body}
-                    </p>
-
-                    {/* Specs */}
-                    <div
-                      className="flex flex-col overflow-hidden rounded-[12px]"
-                      style={{
-                        background: 'rgba(255,255,255,0.03)',
-                        border: '1px solid rgba(255,255,255,0.07)',
-                        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)',
-                      }}
-                    >
-                      {data.specs.map((s, i) => (
-                        <div
-                          key={s.label}
-                          className="flex items-center justify-between px-3 py-2.5"
-                          style={{
-                            borderTop:
-                              i === 0
-                                ? 'none'
-                                : '1px solid rgba(255,255,255,0.05)',
-                          }}
-                        >
-                          <span className="font-mono text-[7.5px] tracking-[0.2em] uppercase text-[#78746D]">
-                            {s.label}
-                          </span>
-                          <span className="font-mono text-[11px] font-medium tracking-wide text-[#F4F1EA] tabular-nums">
-                            {s.value}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Headlight CTA */}
-                    {data.action === 'toggle-headlights' && (
-                      <button
-                        type="button"
-                        onClick={() => toggleHeadlights()}
-                        className="relative mt-0.5 w-full py-2.5 rounded-[12px] font-mono text-[9px] tracking-[0.22em] uppercase font-semibold transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer overflow-hidden"
-                        style={
-                          headlightsOn
-                            ? {
-                                background:
-                                  'linear-gradient(135deg, #E6A100 0%, #F0C14A 50%, #E6A100 100%)',
-                                color: '#121110',
-                                boxShadow:
-                                  '0 0 28px rgba(230,161,0,0.4), inset 0 1px 0 rgba(255,255,255,0.35)',
-                              }
-                            : {
-                                background: 'rgba(255,255,255,0.06)',
-                                color: '#EAE6DF',
-                                border: '1px solid rgba(255,255,255,0.12)',
-                                boxShadow:
-                                  'inset 0 1px 0 rgba(255,255,255,0.08)',
-                              }
-                        }
-                      >
-                        <span
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            headlightsOn
-                              ? 'bg-[#121110]'
-                              : 'bg-[#EAE6DF]/40'
-                          }`}
-                        />
-                        {headlightsOn
-                          ? 'Matrix Beams Active'
-                          : 'Ignite Headlamps'}
-                      </button>
-                    )}
-
-                    {/* Engine CTA */}
-                    {data.action === 'toggle-engine' && (
-                      <button
-                        type="button"
-                        onClick={() => toggleEngine()}
-                        className="relative mt-0.5 w-full py-2.5 rounded-[12px] font-mono text-[9px] tracking-[0.22em] uppercase font-semibold transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer overflow-hidden"
-                        style={
-                          engineOn
-                            ? {
-                                background:
-                                  'linear-gradient(135deg, #D92B2B 0%, #E85A5A 50%, #D92B2B 100%)',
-                                color: '#fff',
-                                boxShadow:
-                                  '0 0 28px rgba(217,43,43,0.4), inset 0 1px 0 rgba(255,255,255,0.2)',
-                              }
-                            : {
-                                background: 'rgba(255,255,255,0.06)',
-                                color: '#EAE6DF',
-                                border: '1px solid rgba(255,255,255,0.12)',
-                                boxShadow:
-                                  'inset 0 1px 0 rgba(255,255,255,0.08)',
-                              }
-                        }
-                      >
-                        <span
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            engineOn
-                              ? 'bg-white animate-pulse'
-                              : 'bg-[#D92B2B] shadow-[0_0_8px_rgba(217,43,43,0.8)]'
-                          }`}
-                        />
-                        {engineOn ? 'Engine Running' : 'Ignite Powertrain'}
-                      </button>
-                    )}
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <span className="font-mono text-[8px] tracking-[0.3em] uppercase text-[#D92B2B] font-bold block mb-1">
+                       {data.label}
+                    </span>
+                    <h3 className="text-sm font-bold text-white leading-tight">
+                      {data.title}
+                    </h3>
                   </div>
-
-                  {/* Bottom inner reflection */}
-                  <div
-                    className="pointer-events-none absolute bottom-0 left-0 right-0 h-10 opacity-[0.07]"
-                    style={{
-                      background:
-                        'linear-gradient(to top, rgba(255,255,255,0.5), transparent)',
-                    }}
-                  />
+                  <button
+                    type="button"
+                    onClick={() => setActiveHotspot(null)}
+                    className="w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xs transition-colors cursor-pointer"
+                  >
+                    ✕
+                  </button>
                 </div>
+
+                <p className="text-[11px] leading-relaxed text-[#A8A49C]">
+                  {data.body}
+                </p>
+
+                <div className="flex flex-col rounded-xl overflow-hidden border border-white/10 bg-white/[0.03]">
+                  {data.specs.map((s, i) => (
+                    <div
+                      key={s.label}
+                      className={`flex items-center justify-between px-3 py-2 ${
+                        i > 0 ? 'border-t border-white/5' : ''
+                      }`}
+                    >
+                      <span className="font-mono text-[7.5px] tracking-[0.2em] uppercase text-[#78746D]">
+                        {s.label}
+                      </span>
+                      <span className="font-mono text-[11px] font-bold text-white">
+                        {s.value}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {data.action === 'toggle-headlights' && (
+                  <button
+                    type="button"
+                    onClick={() => toggleHeadlights()}
+                    className={`
+                      w-full py-2.5 rounded-xl font-mono text-[9px] tracking-[0.2em] uppercase font-bold transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer
+                      ${
+                        headlightsOn
+                          ? 'bg-[#E6A100] text-[#121110] shadow-[0_0_20px_rgba(230,161,0,0.5)]'
+                          : 'bg-white/10 text-white hover:bg-white/20 border border-white/20'
+                      }
+                    `}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        headlightsOn ? 'bg-[#121110]' : 'bg-white/40'
+                      }`}
+                    />
+                    {headlightsOn ? 'Matrix Beams Active' : 'Ignite Headlamps'}
+                  </button>
+                )}
+
+                {data.action === 'toggle-engine' && (
+                  <button
+                    type="button"
+                    onClick={() => toggleEngine()}
+                    className={`
+                      w-full py-2.5 rounded-xl font-mono text-[9px] tracking-[0.2em] uppercase font-bold transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer
+                      ${
+                        engineOn
+                          ? 'bg-[#D92B2B] text-white shadow-[0_0_20px_rgba(217,43,43,0.5)]'
+                          : 'bg-white/10 text-white hover:bg-white/20 border border-white/20'
+                      }
+                    `}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        engineOn ? 'bg-white animate-pulse' : 'bg-[#D92B2B]'
+                      }`}
+                    />
+                    {engineOn ? 'Engine Running' : 'Ignite Powertrain'}
+                  </button>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
@@ -490,10 +347,15 @@ export function Hotspots() {
   const setActiveHotspot = useConfiguratorStore(
     (s: ConfiguratorState) => s.setActiveHotspot
   );
+  const activeManifest = useConfiguratorStore(
+    (s: ConfiguratorState) => s.activeManifest
+  );
 
   const handleMiss = useCallback(() => {
     setActiveHotspot(null);
   }, [setActiveHotspot]);
+
+  const hotspotsList = (activeManifest?.hotspots || []) as HotspotDef[];
 
   return (
     <group>
@@ -506,7 +368,7 @@ export function Hotspots() {
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
-      {HOTSPOTS.map((h) => (
+      {hotspotsList.map((h) => (
         <HotspotMarker key={h.id} data={h} />
       ))}
 

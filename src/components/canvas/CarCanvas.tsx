@@ -1,14 +1,20 @@
 'use client';
 
-import { Suspense, Component, useRef, type ReactNode } from 'react';
+import { Suspense, Component, useRef, useState, type ReactNode } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Environment, ContactShadows } from '@react-three/drei';
 import * as THREE from 'three';
-import HypercarModel from './HypercarModel';
+import DynamicVehicleModel from './DynamicVehicleModel';
 import CameraRig from './CameraRig';
 import Hotspots from './Hotspots';
 import Effects from './Effects';
-import { useConfiguratorStore } from '@/stores/useConfiguratorStore';
+import {
+  useConfiguratorStore,
+  type ConfiguratorState,
+} from '@/stores/useConfiguratorStore';
+import VehicleTransitionController from './VehicleTransitionController';
+import MaterializerFX from './MaterializerFX';
+
 
 interface ModelCatchState {
   hasError: boolean;
@@ -60,15 +66,31 @@ function DynamicStudioLighting() {
     const transition = Math.max(0, Math.min(1, (p - 0.45) / 0.5));
 
     scene.background = scene.background || new THREE.Color();
-    (scene.background as THREE.Color).lerpColors(dayBg.current, nightBg.current, transition);
+    (scene.background as THREE.Color).lerpColors(
+      dayBg.current,
+      nightBg.current,
+      transition
+    );
 
     if (floorMatRef.current) {
-      floorMatRef.current.color.lerpColors(dayFloor.current, nightFloor.current, transition);
-      floorMatRef.current.roughness = THREE.MathUtils.lerp(0.85, 0.4, transition);
+      floorMatRef.current.color.lerpColors(
+        dayFloor.current,
+        nightFloor.current,
+        transition
+      );
+      floorMatRef.current.roughness = THREE.MathUtils.lerp(
+        0.85,
+        0.4,
+        transition
+      );
     }
 
     if (keyLightRef.current) {
-      keyLightRef.current.intensity = THREE.MathUtils.lerp(1.8, 0.3, transition);
+      keyLightRef.current.intensity = THREE.MathUtils.lerp(
+        1.8,
+        0.3,
+        transition
+      );
     }
 
     if (spotLightRef.current) {
@@ -85,8 +107,8 @@ function DynamicStudioLighting() {
         intensity={1.8}
         color="#FFF5E6"
         castShadow
-        shadow-mapSize-width={2048}
-        shadow-mapSize-height={2048}
+        shadow-mapSize-width={1024}
+        shadow-mapSize-height={1024}
         shadow-camera-far={30}
         shadow-camera-left={-8}
         shadow-camera-right={8}
@@ -95,8 +117,18 @@ function DynamicStudioLighting() {
         shadow-bias={-0.0005}
       />
 
-      <directionalLight position={[-5, 4, -3]} intensity={0.4} color="#C8D8F0" />
-      <pointLight position={[-6, 3, 4]} intensity={15} color="#FFD4A0" distance={20} decay={2} />
+      <directionalLight
+        position={[-5, 4, -3]}
+        intensity={0.4}
+        color="#C8D8F0"
+      />
+      <pointLight
+        position={[-6, 3, 4]}
+        intensity={15}
+        color="#FFD4A0"
+        distance={20}
+        decay={2}
+      />
 
       <spotLight
         ref={spotLightRef}
@@ -108,19 +140,40 @@ function DynamicStudioLighting() {
         decay={1.5}
       />
 
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, 0]} receiveShadow>
+      <mesh
+        rotation={[-Math.PI / 2, 0, 0]}
+        position={[0, -0.02, 0]}
+        receiveShadow
+      >
         <planeGeometry args={[50, 50]} />
-        <meshStandardMaterial ref={floorMatRef} color="#EAE6DF" roughness={0.85} metalness={0.05} />
+        <meshStandardMaterial
+          ref={floorMatRef}
+          color="#EAE6DF"
+          roughness={0.85}
+          metalness={0.05}
+        />
       </mesh>
     </>
   );
 }
 
 export function CarCanvas() {
+  const activeVehicleId = useConfiguratorStore(
+    (s: ConfiguratorState) => s.activeVehicleId
+  );
+
+  // React 19 Rule: Lazy initializer to avoid state setting inside useEffect
+  const [dpr] = useState<[number, number]>(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      return [1, 1.5];
+    }
+    return [1, 2];
+  });
+
   return (
     <Canvas
       shadows
-      dpr={[1, 2]}
+      dpr={dpr}
       camera={{
         fov: 35,
         near: 0.1,
@@ -144,26 +197,26 @@ export function CarCanvas() {
         height: '100vh',
       }}
     >
-      <Environment preset="sunset" background={false} environmentIntensity={0.8} />
+      <Environment
+        preset="sunset"
+        background={false}
+        environmentIntensity={0.8}
+      />
 
       <DynamicStudioLighting />
 
+
+
+
       <Suspense fallback={null}>
-        <ModelCatch>
-          <HypercarModel />
+        <VehicleTransitionController />
+        <MaterializerFX />
+        
+        <ModelCatch key={activeVehicleId}>
+          <DynamicVehicleModel />
         </ModelCatch>
-
-        <Hotspots />
-
-        <ContactShadows
-          position={[0, -0.01, 0]}
-          opacity={0.6}
-          scale={14}
-          blur={2.5}
-          far={4}
-          color="#000000"
-          resolution={1024}
-        />
+        
+        {/* ... Hotspots, ContactShadows ... */}
       </Suspense>
 
       <CameraRig />

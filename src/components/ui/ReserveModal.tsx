@@ -5,8 +5,6 @@ import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   useConfiguratorStore,
-  PAINT_COLORS,
-  WHEEL_STYLES,
   type ConfiguratorState,
   type PaintColor,
   type WheelStyle,
@@ -37,6 +35,9 @@ export function ReserveModal() {
   );
   const reserveStep = useConfiguratorStore(
     (s: ConfiguratorState) => s.reserveStep
+  );
+  const activeManifest = useConfiguratorStore(
+    (s: ConfiguratorState) => s.activeManifest
   );
 
   // Close on ESC
@@ -96,7 +97,7 @@ export function ReserveModal() {
             <div className="flex items-center justify-between px-6 pt-5 pb-2 shrink-0">
               <div>
                 <p className="font-mono text-[8px] tracking-[0.28em] uppercase text-[#D92B2B]">
-                  Koenigsegg // One:1
+                  {activeManifest.brand} {activeManifest.name}
                 </p>
                 <h2 className="text-lg font-bold tracking-tight text-[#1F1E1C]">
                   {reserveStep === 3 ? 'Slot Confirmed' : 'Reserve Delivery'}
@@ -163,12 +164,16 @@ function StepForm() {
   const setSlot = useConfiguratorStore((s: ConfiguratorState) => s.setReserveSlot);
   const setStep = useConfiguratorStore((s: ConfiguratorState) => s.setReserveStep);
 
+  const activeManifest = useConfiguratorStore((s: ConfiguratorState) => s.activeManifest);
   const activeColor = useConfiguratorStore((s: ConfiguratorState) => s.activeColor);
   const activeWheel = useConfiguratorStore((s: ConfiguratorState) => s.activeWheel);
+
   const paint: PaintColor =
-    PAINT_COLORS.find((c: PaintColor) => c.id === activeColor) ?? PAINT_COLORS[0];
+    activeManifest.paints.find((c: PaintColor) => c.id === activeColor) ??
+    activeManifest.paints[0];
   const wheel: WheelStyle =
-    WHEEL_STYLES.find((w: WheelStyle) => w.id === activeWheel) ?? WHEEL_STYLES[0];
+    activeManifest.wheels.find((w: WheelStyle) => w.id === activeWheel) ??
+    activeManifest.wheels[0];
 
   const valid = useMemo(() => {
     const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
@@ -449,8 +454,9 @@ function StepSuccess() {
   const name = useConfiguratorStore((s: ConfiguratorState) => s.reserveName);
   const email = useConfiguratorStore((s: ConfiguratorState) => s.reserveEmail);
   const slotId = useConfiguratorStore((s: ConfiguratorState) => s.reserveSlot);
-  const paintId = useConfiguratorStore((s: ConfiguratorState) => s.activeColor);
-  const wheelId = useConfiguratorStore((s: ConfiguratorState) => s.activeWheel);
+  const activeColor = useConfiguratorStore((s: ConfiguratorState) => s.activeColor);
+  const activeWheel = useConfiguratorStore((s: ConfiguratorState) => s.activeWheel);
+  const activeManifest = useConfiguratorStore((s: ConfiguratorState) => s.activeManifest);
   const setReserveOpen = useConfiguratorStore(
     (s: ConfiguratorState) => s.setReserveOpen
   );
@@ -458,19 +464,21 @@ function StepSuccess() {
   const slot: DeliverySlot =
     DELIVERY_SLOTS.find((s: DeliverySlot) => s.id === slotId) ?? DELIVERY_SLOTS[0];
   const paint: PaintColor =
-    PAINT_COLORS.find((c: PaintColor) => c.id === paintId) ?? PAINT_COLORS[0];
+    activeManifest.paints.find((c: PaintColor) => c.id === activeColor) ??
+    activeManifest.paints[0];
   const wheel: WheelStyle =
-    WHEEL_STYLES.find((w: WheelStyle) => w.id === wheelId) ?? WHEEL_STYLES[0];
+    activeManifest.wheels.find((w: WheelStyle) => w.id === activeWheel) ??
+    activeManifest.wheels[0];
 
   const code = useMemo(() => {
-    const seed = `${name}|${email}|${slotId}|${paintId}`
+    const seed = `${name}|${email}|${slotId}|${activeColor}`
       .split('')
       .reduce((a: number, c: string) => {
         return (a * 33 + c.charCodeAt(0)) >>> 0;
       }, 5381);
     const hex = seed.toString(16).toUpperCase().padStart(8, '0');
     return `APX-${hex.slice(0, 4)}-${hex.slice(4)}`;
-  }, [name, email, slotId, paintId]);
+  }, [name, email, slotId, activeColor]);
 
   return (
     <motion.div
@@ -507,7 +515,7 @@ function StepSuccess() {
           Welcome, {name.split(' ')[0] || 'Driver'}
         </h3>
         <p className="mt-1 text-[11px] leading-relaxed text-[#78746D] max-w-[36ch] mx-auto">
-          Your One:1 delivery slot is held. A client advisor will contact{' '}
+          Your {activeManifest.name} delivery slot is held. A client advisor will contact{' '}
           <span className="font-bold text-[#1F1E1C]">{email}</span> within 24 hours.
         </p>
       </div>

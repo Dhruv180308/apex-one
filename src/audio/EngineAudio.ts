@@ -1,7 +1,9 @@
 /**
- * APEX-ONE — Twin-Turbo V8 Synthesizer
- * Web Audio API • no samples • startup + idle + rev
+ * APEX-ONE — Multi-Profile Web Audio Synthesizer Engine
+ * Pure procedural synthesis for V8-Turbo, V12-NA, and Quad-EV Powertrains
  */
+
+export type AudioEngineType = 'v8-turbo' | 'v12-na' | 'v10-na' | 'quad-ev' | 'bike-inline4';
 
 type OscBank = {
   osc: OscillatorNode;
@@ -14,6 +16,8 @@ export class EngineAudio {
   private master: GainNode | null = null;
   private engineGain: GainNode | null = null;
 
+  private profile: AudioEngineType = 'v8-turbo';
+
   private banks: OscBank[] = [];
   private noise: AudioBufferSourceNode | null = null;
   private noiseFilter: BiquadFilterNode | null = null;
@@ -24,17 +28,18 @@ export class EngineAudio {
 
   private started = false;
   private engineOn = false;
-  private muted = false;
 
   private rpm = 0; // 0–1 normalized
   private targetRpm = 0;
 
   private raf = 0;
 
-  /* ── lifecycle ── */
+  /* ── Context Lifecycle ── */
   async ensure() {
     if (this.ctx) return;
-    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const Ctx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     this.ctx = new Ctx();
 
     this.master = this.ctx.createGain();
@@ -48,18 +53,77 @@ export class EngineAudio {
     this.buildGraph();
   }
 
+  public setProfile(profile: AudioEngineType) {
+    if (this.profile === profile) return;
+    this.profile = profile;
+
+    // Rebuild audio nodes if audio context is active
+    if (this.ctx && this.started) {
+      this.teardownGraph();
+      this.buildGraph();
+      if (this.engineOn) {
+        this.banks.forEach((b) => b.osc.start());
+        this.noise?.start();
+        this.lfo?.start();
+      }
+    }
+  }
+
+  private teardownGraph() {
+    try {
+      this.banks.forEach((b) => {
+        b.osc.stop();
+        b.osc.disconnect();
+      });
+      this.banks = [];
+
+      if (this.noise) {
+        this.noise.stop();
+        this.noise.disconnect();
+      }
+      if (this.lfo) {
+        this.lfo.stop();
+        this.lfo.disconnect();
+      }
+    } catch {
+      /* ignore node teardown edge cases */
+    }
+  }
+
   private buildGraph() {
     if (!this.ctx || !this.engineGain) return;
     const ctx = this.ctx;
 
-    // Harmonic banks — V8-ish partials (detuned)
-    const partials: { type: OscillatorType; ratio: number; gain: number; q: number; freq: number }[] = [
-      { type: 'sawtooth', ratio: 1.0, gain: 0.22, q: 2.5, freq: 55 },
-      { type: 'sawtooth', ratio: 1.5, gain: 0.12, q: 3.0, freq: 82 },
-      { type: 'square', ratio: 2.0, gain: 0.08, q: 4.0, freq: 110 },
-      { type: 'sawtooth', ratio: 3.0, gain: 0.05, q: 2.0, freq: 165 },
-      { type: 'triangle', ratio: 0.5, gain: 0.14, q: 1.2, freq: 40 },
-    ];
+    // Harmonic partials tuned per engine profile
+    let partials: { type: OscillatorType; ratio: number; gain: number; q: number; freq: number }[] = [];
+
+    if (this.profile === 'v12-na') {
+      // Pagani V12: High-pitch screaming harmonics
+      partials = [
+        { type: 'sawtooth', ratio: 1.0, gain: 0.18, q: 3.5, freq: 85 },
+        { type: 'sawtooth', ratio: 2.0, gain: 0.14, q: 4.5, freq: 170 },
+        { type: 'sawtooth', ratio: 3.0, gain: 0.10, q: 5.0, freq: 255 },
+        { type: 'square', ratio: 4.0, gain: 0.06, q: 6.0, freq: 340 },
+        { type: 'triangle', ratio: 0.5, gain: 0.12, q: 2.0, freq: 42.5 },
+      ];
+    } else if (this.profile === 'quad-ev') {
+      // Rimac Quad EV: Sine + High-pitch Inverter Whine
+      partials = [
+        { type: 'sine', ratio: 1.0, gain: 0.25, q: 1.0, freq: 120 },
+        { type: 'sine', ratio: 2.5, gain: 0.18, q: 2.0, freq: 300 },
+        { type: 'triangle', ratio: 4.0, gain: 0.12, q: 3.0, freq: 480 },
+        { type: 'sawtooth', ratio: 8.0, gain: 0.05, q: 8.0, freq: 960 },
+      ];
+    } else {
+      // Default: Koenigsegg V8-Turbo
+      partials = [
+        { type: 'sawtooth', ratio: 1.0, gain: 0.22, q: 2.5, freq: 55 },
+        { type: 'sawtooth', ratio: 1.5, gain: 0.12, q: 3.0, freq: 82 },
+        { type: 'square', ratio: 2.0, gain: 0.08, q: 4.0, freq: 110 },
+        { type: 'sawtooth', ratio: 3.0, gain: 0.05, q: 2.0, freq: 165 },
+        { type: 'triangle', ratio: 0.5, gain: 0.14, q: 1.2, freq: 40 },
+      ];
+    }
 
     this.banks = partials.map((p) => {
       const osc = ctx.createOscillator();
@@ -81,16 +145,16 @@ export class EngineAudio {
       return { osc, gain, filter };
     });
 
-    // Exhaust hiss / turbo whoosh (filtered noise)
+    // Exhaust noise / Turbo hiss / EV Inverter hum
     const noiseBuf = this.makeNoiseBuffer(2);
     this.noise = ctx.createBufferSource();
     this.noise.buffer = noiseBuf;
     this.noise.loop = true;
 
     this.noiseFilter = ctx.createBiquadFilter();
-    this.noiseFilter.type = 'bandpass';
-    this.noiseFilter.frequency.value = 1200;
-    this.noiseFilter.Q.value = 0.8;
+    this.noiseFilter.type = this.profile === 'quad-ev' ? 'highpass' : 'bandpass';
+    this.noiseFilter.frequency.value = this.profile === 'quad-ev' ? 2400 : 1200;
+    this.noiseFilter.Q.value = 1.2;
 
     this.noiseGain = ctx.createGain();
     this.noiseGain.gain.value = 0.03;
@@ -99,10 +163,10 @@ export class EngineAudio {
     this.noiseFilter.connect(this.noiseGain);
     this.noiseGain.connect(this.engineGain);
 
-    // Idle lope LFO (cylinder chop)
+    // Idle lope LFO
     this.lfo = ctx.createOscillator();
     this.lfo.type = 'sine';
-    this.lfo.frequency.value = 8; // ~idle lope
+    this.lfo.frequency.value = this.profile === 'quad-ev' ? 2 : 8;
 
     this.lfoGain = ctx.createGain();
     this.lfoGain.gain.value = 0;
@@ -116,7 +180,6 @@ export class EngineAudio {
     const buf = ctx.createBuffer(1, len, ctx.sampleRate);
     const data = buf.getChannelData(0);
     for (let i = 0; i < len; i++) {
-      // Deterministic-ish noise (no Math.random in React tree — fine here in audio util)
       data[i] = (Math.random() * 2 - 1) * 0.6;
     }
     return buf;
@@ -131,27 +194,31 @@ export class EngineAudio {
     this.tick();
   }
 
-  /* ── public API ── */
+  /* ── Public Ignition API ── */
   async startEngine() {
     await this.ensure();
     if (this.ctx!.state === 'suspended') await this.ctx!.resume();
     this.startNodes();
     this.engineOn = true;
 
-    // Crank → catch → idle startup envelope
     const g = this.engineGain!;
     const now = this.ctx!.currentTime;
     g.gain.cancelScheduledValues(now);
     g.gain.setValueAtTime(0, now);
-    // Starter grind swell
-    g.gain.linearRampToValueAtTime(0.35, now + 0.15);
-    g.gain.linearRampToValueAtTime(0.08, now + 0.35);
-    // Catch
-    g.gain.linearRampToValueAtTime(0.55, now + 0.55);
-    // Settle idle
-    g.gain.linearRampToValueAtTime(0.28, now + 1.1);
 
-    this.targetRpm = 0.08; // idle
+    if (this.profile === 'quad-ev') {
+      // Instant high-voltage power-up chime
+      g.gain.linearRampToValueAtTime(0.45, now + 0.15);
+      g.gain.linearRampToValueAtTime(0.2, now + 0.4);
+    } else {
+      // Starter crank -> V8/V12 engine catch
+      g.gain.linearRampToValueAtTime(0.35, now + 0.15);
+      g.gain.linearRampToValueAtTime(0.08, now + 0.35);
+      g.gain.linearRampToValueAtTime(0.55, now + 0.55);
+      g.gain.linearRampToValueAtTime(0.28, now + 1.1);
+    }
+
+    this.targetRpm = 0.08;
   }
 
   stopEngine() {
@@ -166,12 +233,10 @@ export class EngineAudio {
   }
 
   setRpm(normalized: number) {
-    // 0 = idle, 1 = redline scream
     this.targetRpm = Math.max(0, Math.min(1, normalized));
   }
 
   setMuted(muted: boolean) {
-    this.muted = muted;
     if (!this.master || !this.ctx) return;
     const now = this.ctx.currentTime;
     this.master.gain.cancelScheduledValues(now);
@@ -180,90 +245,48 @@ export class EngineAudio {
 
   dispose() {
     cancelAnimationFrame(this.raf);
-    try {
-      this.banks.forEach((b) => b.osc.stop());
-      this.noise?.stop();
-      this.lfo?.stop();
-      this.ctx?.close();
-    } catch {
-      /* already stopped */
-    }
+    this.teardownGraph();
+    this.ctx?.close();
     this.ctx = null;
     this.started = false;
   }
 
-  /* ── realtime voice ── */
+  /* ── Realtime Audio Frame Tick ── */
   private tick = () => {
     this.raf = requestAnimationFrame(this.tick);
     if (!this.ctx || !this.engineOn) return;
 
-    // Smooth rpm
     this.rpm += (this.targetRpm - this.rpm) * 0.08;
     const rpm = this.rpm;
 
-    // Base frequency climbs with rpm (idle ~45Hz → redline ~220Hz fundamental)
-    const baseFreq = 45 + rpm * 180;
-
-    this.banks.forEach((b, i) => {
-      const ratios = [1, 1.5, 2, 3, 0.5];
-      const freq = baseFreq * ratios[i];
-      b.osc.frequency.setTargetAtTime(freq, this.ctx!.currentTime, 0.04);
-
-      // Open the filter as we rev (more growl / presence)
-      const cutoff = 350 + rpm * 4200;
-      b.filter.frequency.setTargetAtTime(cutoff, this.ctx!.currentTime, 0.05);
-
-      // Upper harmonics swell at high rpm
-      const harmonicBoost = i >= 2 ? 0.04 + rpm * 0.12 : 0;
-      const baseGains = [0.22, 0.12, 0.08, 0.05, 0.14];
-      b.gain.gain.setTargetAtTime(
-        (baseGains[i] + harmonicBoost) * (0.7 + rpm * 0.5),
-        this.ctx!.currentTime,
-        0.05
-      );
-    });
-
-    // Turbo / exhaust noise
-    if (this.noiseFilter && this.noiseGain) {
-      this.noiseFilter.frequency.setTargetAtTime(
-        900 + rpm * 3200,
-        this.ctx.currentTime,
-        0.06
-      );
-      this.noiseGain.gain.setTargetAtTime(
-        0.02 + rpm * 0.09,
-        this.ctx.currentTime,
-        0.06
-      );
-    }
-
-    // Idle lope stronger at low rpm, smooths out on rev
-    if (this.lfo && this.lfoGain) {
-      this.lfo.frequency.setTargetAtTime(
-        7 + rpm * 14,
-        this.ctx.currentTime,
-        0.08
-      );
-      this.lfoGain.gain.setTargetAtTime(
-        (1 - rpm) * 0.04,
-        this.ctx.currentTime,
-        0.08
-      );
-    }
-
-    // Overall level climbs slightly with rpm
-    if (this.engineGain) {
-      const body = 0.26 + rpm * 0.45;
-      // Don't fight startup envelope hard — gentle chase
-      const current = this.engineGain.gain.value;
-      if (current > 0.05) {
-        this.engineGain.gain.setTargetAtTime(body, this.ctx.currentTime, 0.1);
-      }
+    if (this.profile === 'quad-ev') {
+      // EV Quad Motor: Base freq sweeps 120Hz -> 2,800Hz
+      const baseFreq = 120 + rpm * 2680;
+      this.banks.forEach((b, i) => {
+        const ratios = [1, 2.5, 4.0, 8.0];
+        b.osc.frequency.setTargetAtTime(baseFreq * ratios[i], this.ctx!.currentTime, 0.04);
+        b.filter.frequency.setTargetAtTime(1000 + rpm * 8000, this.ctx!.currentTime, 0.05);
+      });
+    } else if (this.profile === 'v12-na') {
+      // V12 Screamer: Base freq sweeps 85Hz -> 520Hz (Screaming redline)
+      const baseFreq = 85 + rpm * 435;
+      this.banks.forEach((b, i) => {
+        const ratios = [1, 2.0, 3.0, 4.0, 0.5];
+        b.osc.frequency.setTargetAtTime(baseFreq * ratios[i], this.ctx!.currentTime, 0.03);
+        b.filter.frequency.setTargetAtTime(500 + rpm * 6500, this.ctx!.currentTime, 0.04);
+      });
+    } else {
+      // V8 Turbo: Base freq sweeps 45Hz -> 220Hz
+      const baseFreq = 45 + rpm * 180;
+      this.banks.forEach((b, i) => {
+        const ratios = [1, 1.5, 2, 3, 0.5];
+        b.osc.frequency.setTargetAtTime(baseFreq * ratios[i], this.ctx!.currentTime, 0.04);
+        b.filter.frequency.setTargetAtTime(350 + rpm * 4200, this.ctx!.currentTime, 0.05);
+      });
     }
   };
 }
 
-/** Singleton — one engine voice for the app */
 let singleton: EngineAudio | null = null;
 export function getEngineAudio(): EngineAudio {
   if (!singleton) singleton = new EngineAudio();
